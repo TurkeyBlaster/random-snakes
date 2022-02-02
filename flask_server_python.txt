@@ -1,0 +1,115 @@
+# main.py
+#!/usr/bin/env python
+
+from flask import Flask, request, send_file
+from flask_restful import Api
+from api.api import MP3
+from api.tasks.ytdl import YTDL
+
+app = Flask(__name__)
+api = Api(app)
+
+api.add_resource(MP3, '/mp3')
+
+@app.route('/')
+def index():
+    return "<p>Hello World</p>"
+
+@app.route('/getmp3')
+def getmp3():
+    name = request.args['name']
+    return send_file(f"/home/ananthmadan03/flaskrestfulapi/sndfs/{name}/accompaniment.mp3")
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+# api/api.py
+from flask_restful import Resource, reqparse
+from .tasks.ytdl import YTDL
+from .tasks.spltr import separator
+import threading
+import sys
+
+try:
+    _ = cache
+    _ = proc_cache
+except NameError:
+    cache = {}
+    proc_cache = set()
+
+class MP3(Resource):
+    def __init__(self):
+        super()
+        self.parser = reqparse.RequestParser()
+        self.parser.add_argument('kwds')
+    def get(self):
+        global cache, proc_cache
+        args = self.parser.parse_args()
+        kwds = args['kwds']
+        if kwds in cache:
+            return cache[kwds]
+        else:
+            if kwds not in proc_cache:
+                proc_cache.add(kwds)
+                threading.Thread(target=self.download_file, args=(kwds,)).start()
+            return {'processing': True}
+    def download_file(self, kwds):
+        global cache, proc_cache
+        name, url, title, artist_name = YTDL().get_download_from_kwds(kwds)
+        separator.separate_to_file(
+            f'/home/ananthmadan03/flaskrestfulapi/sndfs/{name}.mp3',
+            '/home/ananthmadan03/flaskrestfulapi/sndfs/',
+            codec = 'mp3'
+        )
+        cache[kwds] = {'name': name, 'url': url, 'title': title, 'artist_name': artist_name}
+        proc_cache.remove(kwds)
+        sys.exit(0)
+
+# api/tasks/spltr.py
+from spleeter.separator import Separator
+separator = Separator('spleeter:2stems')
+
+# api/tasks/ytdl.py
+#! -*- coding: utf-8 -*-
+import youtube_dl
+import string
+import shutil
+import os
+
+class YTDL():
+    def __init__(self):
+        self.kwds_opts = {
+            'quiet': True,
+            'skip_download': True,
+            'forcetitle': True,
+            'forceurl': True
+        }
+        self.audio_opts = {
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }]
+        }
+    def get_download_from_kwds(self, kwds):
+        with youtube_dl.YoutubeDL(self.kwds_opts) as ytdl:
+            search = ytdl.extract_info(f'ytsearch1:{kwds}')
+        url = search['entries'][0]['webpage_url']
+        title = search['entries'][0]['title']
+        id = search['entries'][0]['id']
+        artist_name = search['entries'][0]['uploader']
+        with youtube_dl.YoutubeDL(self.audio_opts) as ytdl:
+            ytdl.download([url])
+        fp_from_kwds = self.process_kwds(kwds)
+        with open(f'/home/ananthmadan03/flaskrestfulapi/sndfs/{fp_from_kwds}.mp3', 'wb'):
+            shutil.move(f'{title}-{id}.mp3', f'/home/ananthmadan03/flaskrestfulapi/sndfs/{fp_from_kwds}.mp3')
+        return f'{fp_from_kwds}', url, title, artist_name
+    def legacy_get_download_from_kwds(self, kwds):
+        with youtube_dl.YoutubeDL(self.kwds_opts) as ytdl:
+            search = ytdl.extract_info(f'ytsearch1:{kwds}')
+        title = search['entries'][0]['title']
+        url = search['entries'][0]['formats'][0]['url']
+        return url, title
+    @staticmethod
+    def process_kwds(kwds):
+        return kwds.translate(str.maketrans(' ', '_', string.punctuation))

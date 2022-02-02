@@ -1,0 +1,15 @@
+# Lab 1
+# Prints "Howdy, World!" + fun fact
+print('Howdy, World!\nI am 18 years old.')
+print(f'Area of rectangle is {5*3} in^2')
+# Lab 2
+# Prints some things
+print(f'Force is {5*2:.1f} N')
+print(f'Wavelength is {2*0.025*sin(pi*25/180/1):.3f} nm')
+print(f'Radon-222 left is {5*2**(-5/3.8):.4f} g')
+print(f'Pressure is {5*8.314*425/0.15/1000:.2f} kPa')
+# Lab 3
+# Prints things
+func = lambda x: (exp(x)-1)/x
+for i in range(1, 11):
+	print(f'My guess is {func(1/i)}')
